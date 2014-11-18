@@ -1,0 +1,165 @@
+<?php
+/**
+ * @file
+ * Main bootstrap file of the responder module.
+ */
+function responder( $name = "John Smith", $mail = "johnsaumzxaxxsaitha@gmail.com"){
+	# include the libraries needed to make the REST API requestsu
+	require_once(drupal_get_path("module", "responder").'/sdk/responder_sdk.php');
+	require_once(drupal_get_path("module", "responder").'/sdk/OAuth.php');
+	
+	# Tokens; fill with the tokens acquired from the responder support team
+	$client_key = variable_get("responder_client_key",'E8B744B7CD2CD597376DDB9179166009');
+	$client_secret = variable_get("responder_client_secret",'BE998296C3D2DCBF0702771E8662114F');
+	$user_key = variable_get("responder_user_key",'FE53182CCBB674367103D9624655A489');	
+	$user_secret = variable_get("responder_user_secret",'5FBB29EB250C40D7750119E63776D201');
+	
+	$list_id = variable_get("responder_list_id", "131011");
+	# create the responder request instance
+	$responder = new ResponderOAuth($client_key, $client_secret, $user_key, $user_secret);
+	
+	# the data passed with the request (not needed with GET method)
+	$post_data = array(
+		'subscribers' => json_encode(
+			array(
+				array(
+					"NAME" => $name,
+      				"EMAIL" => $mail,
+      				/* "PHONE" => "052-2345678",
+      				"DAY" => 0 */
+				)
+			)
+		)
+	);
+	
+	# execute the request
+	$response = $responder->http_request('lists/'.$list_id.'/subscribers', 'post', $post_data);
+	return $response;
+}
+
+function responder_user_insert(&$edit, $account, $category){
+	$m = gettype($account->mail);
+	if($account->is_new && $m !== "NULL"){
+		responder_action($account->name, $account->mail);
+	}
+}
+
+function responder_action($name,$email = "no@mail.com") {
+
+	$response = responder($name,$email);
+
+	$json_response = json_decode($response);
+	$created = count($json_response->SUBSCRIBERS_CREATED);
+
+	if($created === 1 ){
+		foreach ($json_response->SUBSCRIBERS_CREATED as $k => $v){
+			responder_log($v);
+		}
+	} else {
+		
+		echo "failed to add user to responder service (רב מסר)";
+		var_dump($json_response);
+		die();	exit(); //no need for drupal ajax stuff
+		
+	}
+
+}
+function responder_log($id) {
+	$msg = t("created new suscribere.. responder suscriber id is = %id");
+	$vars = array("%id" => $id);
+	watchdog('responder', $msg, $vars, WATCHDOG_NOTICE);
+}
+/**
+ * Implements hook_menu().
+ *
+ */
+function responder_menu() {
+  $menu = array();
+/* 
+  $items['res'] = array(
+    'title' => 'res',
+    'page callback' => 'responder_view',
+    'delivery callback' => 'ajax_deliver',
+    'access callback' => true,
+    'file' => 'responder.pages.inc',
+    'type' => MENU_CALLBACK,
+    'weight' => 0,
+  ); */
+  $items['admin/scholare-settings/responder'] = array(
+  		'title' => 'רב מסר',
+  		'description' => 'הגדרות חשבון למערכת רב מסר',
+  		'page callback' => 'drupal_get_form',
+  		'page arguments' => array('responder_admin'),
+  		'access arguments' => array('access administration pages'),
+  		'type' => MENU_NORMAL_ITEM,
+  );
+  
+  return $items;
+}
+
+function responder_admin() {
+	$form = array();
+	$form['list_id'] = array(
+			'#type' => 'textfield',
+			'#title' => "מזהה רשימה ",
+			'#default_value' => variable_get('responder_list_id'),
+			'#weight' => 10);
+	
+	$form['client_key'] = array(
+			'#type' => 'textfield',
+			'#title' => "client key ",
+			'#default_value' => variable_get('responder_client_key'),
+			'#weight' => 0);
+	
+	$form['client_secret'] = array(
+			'#type' => 'textfield',
+			'#title' => "client key ",
+			'#default_value' => variable_get('responder_client_secret'),
+			'#weight' => 0);
+	
+	
+	$form['user_key'] = array(
+			'#type' => 'textfield',
+			'#title' => "user key ",
+			'#default_value' => variable_get('responder_user_key'),
+			'#weight' => 0);
+	
+	
+	$form['user_secret'] = array(
+			'#type' => 'textfield',
+			'#title' => "user secret ",
+			'#default_value' => variable_get('responder_user_secret'),
+			'#weight' => 0);
+	
+	
+	$form['#submit'] = array('responder_admin_submit');
+	return system_settings_form($form);
+}
+
+function responder_admin_submit($form, &$form_state) {
+	variable_set("responder_list_id", $form_state['values']['list_id']);
+}
+function responder_admin_validate($form, &$form_state) {
+
+	if ($form_state['values']['list_id'] === "") {
+		form_set_error('list_id', 'נא למלא מספר מזהה רשימה מאתר רב מסר..');
+	}
+
+	if ($form_state['values']['user_key'] === "") {
+		form_set_error('user_key', 'נא למלא user key ..');
+	}
+
+	if ($form_state['values']['user_secret'] === "") {
+		form_set_error('user_secret', 'נא למלא user secret..');
+	}
+
+	if ($form_state['values']['client_key'] === "") {
+		form_set_error('client_key', "נא למלא client key");
+	}
+
+	if ($form_state['values']['client_secret'] === "") {
+		form_set_error('client_secret', 'נא למלא client secret..');
+	}
+
+}
+
